@@ -37,5 +37,5 @@ jobs:
 
       - name: Push to downstream repo
         run: |
-          git remote set-url origin "${{ github.repositoryUrl }}"
+          git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
           git push origin --tags "refs/remotes/origin/*:refs/heads/*"
