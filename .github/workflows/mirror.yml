@@ -29,11 +29,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Runs a set of commands using the runners shell
-      - name: Add upstream and fetch all
+      - name: Add remote and calculate stats
         run: |
+          echo "Local: $(git for-each-ref refs/remotes/origin | wc -l) branches, $(git for-each-ref refs/tags | wc -l) tags"
           git remote set-url origin "${{ secrets.upstream_repo }}"
-          git fetch --all
+          echo "Remote: $(git ls-remote origin 'refs/heads/*' | wc -l) branches, $(git ls-remote origin 'refs/tags/*' | wc -l) tags"
+
+      # Runs a set of commands using the runners shell
+      - name: Fetch branches and tags
+        run: |
+          git fetch --force origin 'refs/heads/*:refs/remotes/origin/*' 'refs/tags/*:refs/tags/*'
+          echo "Local after fetch: $(git for-each-ref refs/remotes/origin | wc -l) branches, $(git for-each-ref refs/tags | wc -l) tags"
 
       - name: Push to downstream repo
         run: |
