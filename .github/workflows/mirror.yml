@@ -44,4 +44,4 @@ jobs:
       - name: Push to downstream repo
         run: |
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
-          git for-each-ref --format="%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@^refs/remotes/origin/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 500 git push origin
+          git for-each-ref --format="%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@^refs/remotes/origin/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push origin
