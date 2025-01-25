@@ -28,17 +28,32 @@ jobs:
 
       - name: Add remote and calculate stats
         run: |
-          echo "Local: $(git for-each-ref refs/remotes/origin | wc -l) branches, $(git for-each-ref refs/tags | wc -l) tags"
+          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' > git-refs-local.txt
+          echo "Local: $(grep refs/heads git-refs-local.txt | wc -l) branches, $(grep refs/tags git-refs-local.txt | wc -l) tags"
+
           git remote set-url origin "${{ secrets.upstream_repo }}"
-          echo "Remote: $(git ls-remote origin 'refs/heads/*' | wc -l) branches, $(git ls-remote origin 'refs/tags/*' | wc -l) tags"
+
+          git ls-remote origin 'refs/tags/*' 'refs/heads/*' | grep -Fv '^{}' | tee git-refs-remote.txt
+          echo "Remote: $(grep refs/heads git-refs-remote.txt | wc -l) branches, $(grep refs/tags git-refs-remote.txt | wc -l) tags"
 
       # Runs a set of commands using the runners shell
       - name: Fetch branches and tags
         run: |
           git fetch --force origin 'refs/heads/*:refs/remotes/origin/*' 'refs/tags/*:refs/tags/*'
-          echo "Local after fetch: $(git for-each-ref refs/remotes/origin | wc -l) branches, $(git for-each-ref refs/tags | wc -l) tags"
 
       - name: Push to downstream repo
         run: |
+          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' > git-refs-local-fetched.txt
+          echo "Local after fetch: $(grep refs/heads git-refs-local-fetched.txt | wc -l) branches, $(grep refs/tags git-refs-local-fetched.txt | wc -l) tags"
+
+          diff -e git-refs-local.txt git-refs-remote.txt | grep '\t' > git-refs-updated.txt
+          echo "To be updated: $(grep refs/heads git-refs-updated.txt | wc -l) branches, $(grep refs/tags git-refs-updated.txt | wc -l) tags"
+
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
-          git for-each-ref --format="%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@^refs/remotes/origin/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push origin
+          cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push origin
+
+      - name: Upload git-refs for reference
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: git-refs-log
+          path: git-refs-*
