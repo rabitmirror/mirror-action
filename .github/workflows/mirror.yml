@@ -4,6 +4,10 @@ name: Repo Mirror
 
 # Controls when the workflow will run
 on:
+  # Triggers the workflow on push events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+
   schedule:
     - cron:  '30 19 * * *'
 
@@ -42,6 +46,7 @@ jobs:
           git fetch --force origin 'refs/heads/*:refs/remotes/origin/*' 'refs/tags/*:refs/tags/*'
 
       - name: Push to downstream repo
+        continue-on-error: true
         run: |
           git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' > git-refs-local-fetched.txt
           echo "Local after fetch: $(grep refs/heads git-refs-local-fetched.txt | wc -l) branches, $(grep refs/tags git-refs-local-fetched.txt | wc -l) tags"
@@ -50,7 +55,7 @@ jobs:
           echo "To be updated: $(grep refs/heads git-refs-updated.txt | wc -l) branches, $(grep refs/tags git-refs-updated.txt | wc -l) tags"
 
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
-          cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push origin
+          cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push --force origin
 
       - name: Upload git-refs for reference
         uses: actions/upload-artifact@v4.6.0
