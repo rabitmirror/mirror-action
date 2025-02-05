@@ -1,7 +1,7 @@
 name: Repo Mirror
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "gh_actions" ]
   schedule:
     - cron:  '30 19 * * *'
   workflow_dispatch:
