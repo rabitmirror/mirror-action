@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,16 +21,38 @@ jobs:
       - name: Add remote and calculate stats
         run: |
           git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' | sort > git-refs-local.txt
-          echo "Local: $(grep refs/heads git-refs-local.txt | wc -l) branches, $(grep refs/tags git-refs-local.txt | wc -l) tags"
+          gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-local.txt
+          echo "Local: $(grep refs/heads git-refs-local.txt | wc -l) branches, $(grep refs/tags git-refs-local.txt | wc -l) tags, $(wc -l < git-releases-local.txt) releases"
 
           git remote set-url origin "${{ secrets.upstream_repo }}"
 
           git ls-remote origin 'refs/tags/*' 'refs/heads/*' | grep -Fv '^{}' | sort | tee git-refs-remote.txt
-          echo "Remote: $(grep refs/heads git-refs-remote.txt | wc -l) branches, $(grep refs/tags git-refs-remote.txt | wc -l) tags"
+          gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-remote.txt
+          echo "Remote: $(grep refs/heads git-refs-remote.txt | wc -l) branches, $(grep refs/tags git-refs-remote.txt | wc -l) tags, $(wc -l < git-releases-remote.txt) releases"
 
       - name: Fetch branches and tags
         run: |
           git fetch --force origin 'refs/heads/*:refs/remotes/origin/*' 'refs/tags/*:refs/tags/*'
+
+      - name: Fetch releases
+        run: |
+          comm -13 git-releases-local.txt git-releases-remote.txt > git-releases-updated.txt
+          cat git-releases-updated.txt | while read tagName;
+          do
+            echo Fetching release ${tagName}
+
+            ifile="dist/${tagName}/info.json"
+            nfile="dist/${tagName}/RELEASENOTE.md"
+            apath="dist/${tagName}/assets"
+
+            mkdir -p "${apath}"
+            # download info
+            gh release view "${tagName}" --json tagName,name,body,targetCommitish,isDraft,isPrerelease > "${ifile}"
+            # extract release notes
+            jq -r '.body' "${ifile}" > "${nfile}"
+            # download assets
+            gh release download "${tagName}" -D "${apath}"
+          done
 
       - name: Push to downstream repo
         continue-on-error: true
@@ -42,8 +66,31 @@ jobs:
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
           cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push --force origin
 
+      - name: Upload releases
+        run: |
+          cat git-releases-updated.txt | while read tagName;
+          do
+            echo Uploading release ${tagName}
+
+            ifile="dist/${tagName}/info.json"
+            nfile="dist/${tagName}/RELEASENOTE.md"
+            apath="dist/${tagName}/assets"
+
+            gh_args=""
+            jq -r '.isPrerelease' "${ifile}" | grep -q true && gh_args+=' --prerelease'
+            #jq -r '.isDraft' "${ifile}" | grep -q true && gh_args+=' --draft'
+
+            name=$(jq -r '.name' "${ifile}")
+            targetCommitish=$(jq -r '.targetCommitish' "${ifile}")
+
+            gh release create "${tagName}" --title "${name}" --notes-file "${nfile}" --target "${targetCommitish}" ${gh_args} "${apath}"/*
+          done
+
+
       - name: Upload git-refs for reference
         uses: actions/upload-artifact@v4.6.0
         with:
           name: git-refs-log
-          path: git-refs-*
+          path: |
+            git-refs-*
+            git-releases-*
