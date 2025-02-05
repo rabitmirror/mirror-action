@@ -61,7 +61,9 @@ jobs:
           echo "Local after fetch: $(grep refs/heads git-refs-local-fetched.txt | wc -l) branches, $(grep refs/tags git-refs-local-fetched.txt | wc -l) tags"
 
           comm -13 git-refs-local.txt git-refs-remote.txt > git-refs-updated.txt
+          comm -23 git-refs-local.txt git-refs-remote.txt > git-refs-removed.txt
           echo "To be updated: $(grep refs/heads git-refs-updated.txt | wc -l) branches, $(grep refs/tags git-refs-updated.txt | wc -l) tags"
+          echo "Removed from upstream: $(grep refs/heads git-refs-removed.txt | wc -l) branches, $(grep refs/tags git-refs-removed.txt | wc -l) tags"
 
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
           cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push --force origin
