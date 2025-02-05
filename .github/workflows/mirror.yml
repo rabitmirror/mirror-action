@@ -18,12 +18,12 @@ jobs:
 
       - name: Add remote and calculate stats
         run: |
-          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' > git-refs-local.txt
+          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' | sort > git-refs-local.txt
           echo "Local: $(grep refs/heads git-refs-local.txt | wc -l) branches, $(grep refs/tags git-refs-local.txt | wc -l) tags"
 
           git remote set-url origin "${{ secrets.upstream_repo }}"
 
-          git ls-remote origin 'refs/tags/*' 'refs/heads/*' | grep -Fv '^{}' | tee git-refs-remote.txt
+          git ls-remote origin 'refs/tags/*' 'refs/heads/*' | grep -Fv '^{}' | sort | tee git-refs-remote.txt
           echo "Remote: $(grep refs/heads git-refs-remote.txt | wc -l) branches, $(grep refs/tags git-refs-remote.txt | wc -l) tags"
 
       - name: Fetch branches and tags
@@ -33,10 +33,10 @@ jobs:
       - name: Push to downstream repo
         continue-on-error: true
         run: |
-          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' > git-refs-local-fetched.txt
+          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' | sort > git-refs-local-fetched.txt
           echo "Local after fetch: $(grep refs/heads git-refs-local-fetched.txt | wc -l) branches, $(grep refs/tags git-refs-local-fetched.txt | wc -l) tags"
 
-          diff -e git-refs-local.txt git-refs-remote.txt | grep '\t' > git-refs-updated.txt
+          comm -13 git-refs-local.txt git-refs-remote.txt > git-refs-updated.txt
           echo "To be updated: $(grep refs/heads git-refs-updated.txt | wc -l) branches, $(grep refs/tags git-refs-updated.txt | wc -l) tags"
 
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
