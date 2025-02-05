@@ -51,7 +51,7 @@ jobs:
             # extract release notes
             jq -r '.body' "${ifile}" > "${nfile}"
             # download assets
-            gh release download "${tagName}" -D "${apath}"
+            gh release download "${tagName}" -D "${apath}" || rmdir "${apath}"
           done
 
       - name: Push to downstream repo
@@ -81,11 +81,12 @@ jobs:
             gh_args=""
             jq -r '.isPrerelease' "${ifile}" | grep -q true && gh_args+=' --prerelease'
             #jq -r '.isDraft' "${ifile}" | grep -q true && gh_args+=' --draft'
+            test -d "${apath}" && gh_args+=" ${apath}/*"
 
             name=$(jq -r '.name' "${ifile}")
             targetCommitish=$(jq -r '.targetCommitish' "${ifile}")
 
-            gh release create "${tagName}" --title "${name}" --notes-file "${nfile}" --target "${targetCommitish}" ${gh_args} "${apath}"/*
+            gh release create "${tagName}" --title "${name}" --notes-file "${nfile}" --target "${targetCommitish}" ${gh_args}
           done
 
 
