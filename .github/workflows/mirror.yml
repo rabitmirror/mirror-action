@@ -7,12 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  mirror:
+  mirror-commits:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,21 +19,55 @@ jobs:
       - name: Add remote and calculate stats
         run: |
           git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' | sort > git-refs-local.txt
-          gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-local.txt
-          echo "Local: $(grep refs/heads git-refs-local.txt | wc -l) branches, $(grep refs/tags git-refs-local.txt | wc -l) tags, $(wc -l < git-releases-local.txt) releases"
+          echo "Local: $(grep refs/heads git-refs-local.txt | wc -l) branches, $(grep refs/tags git-refs-local.txt | wc -l) tags"
 
           git remote set-url origin "${{ secrets.upstream_repo }}"
 
           git ls-remote origin 'refs/tags/*' 'refs/heads/*' | grep -Fv '^{}' | sort | tee git-refs-remote.txt
-          gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-remote.txt
-          echo "Remote: $(grep refs/heads git-refs-remote.txt | wc -l) branches, $(grep refs/tags git-refs-remote.txt | wc -l) tags, $(wc -l < git-releases-remote.txt) releases"
+          echo "Remote: $(grep refs/heads git-refs-remote.txt | wc -l) branches, $(grep refs/tags git-refs-remote.txt | wc -l) tags"
 
       - name: Fetch branches and tags
         run: |
           git fetch --force origin 'refs/heads/*:refs/remotes/origin/*' 'refs/tags/*:refs/tags/*'
 
+      - name: Push to downstream repo
+        continue-on-error: true
+        run: |
+          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' | sort > git-refs-local-fetched.txt
+          echo "Local after fetch: $(grep refs/heads git-refs-local-fetched.txt | wc -l) branches, $(grep refs/tags git-refs-local-fetched.txt | wc -l) tags"
+
+          comm -13 git-refs-local.txt git-refs-remote.txt > git-refs-updated.txt
+          comm -23 git-refs-local.txt git-refs-remote.txt > git-refs-removed.txt
+          echo "To be updated: $(grep refs/heads git-refs-updated.txt | wc -l) branches, $(grep refs/tags git-refs-updated.txt | wc -l) tags"
+          echo "Removed from upstream: $(grep refs/heads git-refs-removed.txt | wc -l) branches, $(grep refs/tags git-refs-removed.txt | wc -l) tags"
+
+          git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
+          cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push --force origin
+
+      - name: Upload git-refs-log
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: git-refs-log
+          path: |
+            git-refs-*
+
+  mirror-releases:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
       - name: Fetch releases
         run: |
+          gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-local.txt
+
+          git remote set-url origin "${{ secrets.upstream_repo }}"
+
+          gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-remote.txt
+          echo "Local: $(wc -l < git-releases-local.txt) releases, Remote: $(wc -l < git-releases-remote.txt) releases"
+
           comm -13 git-releases-local.txt git-releases-remote.txt > git-releases-updated.txt
           cat git-releases-updated.txt | while read tagName;
           do
@@ -54,22 +86,10 @@ jobs:
             gh release download "${tagName}" -D "${apath}" || rmdir "${apath}"
           done
 
-      - name: Push to downstream repo
-        continue-on-error: true
-        run: |
-          git for-each-ref --format="%(objectname)%09%(refname)" --exclude refs/remotes/origin/HEAD refs/remotes/origin refs/tags | sed -E 's@refs/remotes/origin/(.*)@refs/heads/\1@g' | sort > git-refs-local-fetched.txt
-          echo "Local after fetch: $(grep refs/heads git-refs-local-fetched.txt | wc -l) branches, $(grep refs/tags git-refs-local-fetched.txt | wc -l) tags"
-
-          comm -13 git-refs-local.txt git-refs-remote.txt > git-refs-updated.txt
-          comm -23 git-refs-local.txt git-refs-remote.txt > git-refs-removed.txt
-          echo "To be updated: $(grep refs/heads git-refs-updated.txt | wc -l) branches, $(grep refs/tags git-refs-updated.txt | wc -l) tags"
-          echo "Removed from upstream: $(grep refs/heads git-refs-removed.txt | wc -l) branches, $(grep refs/tags git-refs-removed.txt | wc -l) tags"
-
-          git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
-          cut -f2 < git-refs-updated.txt | sed -E 's@^refs/heads/(.*)@refs/remotes/origin/\1:refs/heads/\1@g' | xargs -n 2000 git push --force origin
-
       - name: Upload releases
         run: |
+          git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
+
           cat git-releases-updated.txt | while read tagName;
           do
             echo Uploading release ${tagName}
@@ -89,11 +109,26 @@ jobs:
             gh release create "${tagName}" --title "${name}" --notes-file "${nfile}" --target "${targetCommitish}" ${gh_args}
           done
 
-
-      - name: Upload git-refs for reference
+      - name: Upload git-releases-log
         uses: actions/upload-artifact@v4.6.0
         with:
-          name: git-refs-log
+          name: git-releases-log
           path: |
-            git-refs-*
             git-releases-*
+
+  mirror-wiki:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch Wiki
+        run: |
+          git clone --bare "${{ secrets.upstream_repo }}.wiki.git" .wiki
+
+      - name: Upload Wiki
+        run: |
+          git -C .wiki config --local http.https://github.com/.extraheader "$(git config http.https://github.com/.extraheader)"
+          git -C .wiki remote set-url origin "${{ github.server_url }}/${{ github.repository }}.wiki.git"
+          git -C .wiki remote set-url origin ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.wiki.git
+          git -C .wiki push --all --force
