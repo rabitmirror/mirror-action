@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  mirror-commits:
+  mirror-repo:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -51,15 +51,9 @@ jobs:
           path: |
             git-refs-*
 
-  mirror-releases:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch releases
+      - name: Fetch Github releases
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release list --limit=1000 --json 'tagName' --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > git-releases-local.txt
 
@@ -86,7 +80,9 @@ jobs:
             gh release download "${tagName}" -D "${apath}" || rmdir "${apath}"
           done
 
-      - name: Upload releases
+      - name: Upload Github releases
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git remote set-url origin "${{ github.server_url }}/${{ github.repository }}"
 
@@ -116,20 +112,10 @@ jobs:
           path: |
             git-releases-*
 
-  mirror-wiki:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fetch Wiki
-        continue-on-error: true
+      - name: Fetch and upload Github Wiki
         run: |
-          git clone --bare "${{ secrets.upstream_repo }}.wiki.git" _wiki
+          git clone --bare "${{ secrets.upstream_repo }}.wiki.git" _wiki || { echo "::warning title=Wiki Fetch Error::Upstream repo have no Wiki pages or disabled Wiki"; exit 0; }
 
-      - name: Upload Wiki
-        run: |
-          test -d _wiki || exit 0
           git -C _wiki config --local http.https://github.com/.extraheader "$(git config http.https://github.com/.extraheader)"
           git -C _wiki remote set-url origin "${{ github.server_url }}/${{ github.repository }}.wiki.git"
           git -C _wiki remote set-url origin ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.wiki.git
