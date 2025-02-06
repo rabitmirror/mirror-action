@@ -123,12 +123,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Fetch Wiki
+        continue-on-error: true
         run: |
-          git clone --bare "${{ secrets.upstream_repo }}.wiki.git" .wiki
+          git clone --bare "${{ secrets.upstream_repo }}.wiki.git" _wiki
 
       - name: Upload Wiki
         run: |
-          git -C .wiki config --local http.https://github.com/.extraheader "$(git config http.https://github.com/.extraheader)"
-          git -C .wiki remote set-url origin "${{ github.server_url }}/${{ github.repository }}.wiki.git"
-          git -C .wiki remote set-url origin ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.wiki.git
-          git -C .wiki push --all --force
+          test -d _wiki || exit 0
+          git -C _wiki config --local http.https://github.com/.extraheader "$(git config http.https://github.com/.extraheader)"
+          git -C _wiki remote set-url origin "${{ github.server_url }}/${{ github.repository }}.wiki.git"
+          git -C _wiki remote set-url origin ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.wiki.git
+          git -C _wiki push --all --force
